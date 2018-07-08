@@ -12,12 +12,14 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <getopt.h>
 #include <bcc/bcc.h>
 
 #define INSN_SIZE 32
 #define MAX_INS_LENGTH 4
+#define TBR_MASK 0xFF0
 
-extern int resume;
+extern int resume, postamble_start, postamble_end;
 
 void* packet_buffer;
 char* packet;
@@ -40,7 +42,7 @@ typedef struct
 range_t search_range =
   { .start =
     { .bytes =
-      { 0x00, 0x00, 0xff, 0xff }, .len = 0, .index = 0 }, .end =
+      { 0x80, 0xa0, 0x60, 0x00 }, .len = 0, .index = 0 }, .end =
     { .bytes =
       { 0x00, 0xff, 0xff, 0xff }, .len = 0, .index = 2 ^ 32 }, .started =
   false };
@@ -48,10 +50,70 @@ range_t search_range =
 typedef struct
 {
   uint32_t illegal_instruction;
+  uint32_t data_store_error;
+  uint32_t instruction_access_MMU_miss;
+  uint32_t instruction_access_error;
+  uint32_t r_register_access_error;
+  uint32_t instruction_access_exception;
+  uint32_t priviledged_instruction;
+  uint32_t fp_disabled;
+  uint32_t cp_disabled;
+  uint32_t unimplemented_FLUSH;
+  uint32_t watchpoint_detected;
+  uint32_t window_overflow;
+  uint32_t window_underflow;
+  uint32_t mem_address_not_aligned;
+  uint32_t fp_exception;
+  uint32_t cp_exception;
+  uint32_t data_access_error;
+  uint32_t data_access_MMU_miss;
+  uint32_t data_access_exception;
+  uint32_t tag_overflow;
+  uint32_t division_by_zero;
+  uint32_t other;
 } trptbl_t;
 trptbl_t trap_totals =
-  { .illegal_instruction = 0
-  };
+  { .illegal_instruction = 0, .data_store_error = 0,
+      .instruction_access_MMU_miss = 0, .instruction_access_error = 0,
+      .r_register_access_error = 0, .instruction_access_error = 0,
+      .priviledged_instruction = 0, .illegal_instruction = 0, .fp_disabled = 0,
+      .cp_disabled = 0, .unimplemented_FLUSH = 0, .watchpoint_detected = 0,
+      .window_overflow = 0, .window_underflow = 0, .mem_address_not_aligned = 0,
+      .fp_exception = 0, .cp_exception = 0, .data_access_error = 0,
+      .data_access_MMU_miss = 0, .data_access_exception = 0, .tag_overflow = 0,
+      .division_by_zero = 0, .other = 0 };
+
+void
+initialize (int argc, char** argv)
+{
+  int c;
+  while ((c = getopt (argc, argv, "i:")) != -1)
+    {
+      switch (c)
+	{
+	case 'i':
+	  puts ("Hi :)");
+	}
+    }
+}
+
+void
+postamble (void)
+{
+  __asm__ __volatile__ ("\
+  			.global postamble_start                    \n\
+  			postamble_start:                           \n\
+			sethi %%hi(resume), %%g1                   \n\
+	                or %%g1, %%lo(resume), %%g1		   \n\
+  			jmp %%g1                                   \n\
+  			nop                                        \n\
+  			.global postamble_end                      \n\
+  			postamble_end:                             \n\
+  			"
+      : // No output
+      : // No input
+  );
+}
 
 void
 hexDump (char *desc, void *addr, int len)
@@ -161,6 +223,9 @@ inject (void)
 {
 
   int i;
+  int a_start = (int) &postamble_start;
+  int a_end = (int) &postamble_end;
+  int postamble_length = a_end - a_start;
   packet = packet_buffer;
 
   for (i = 0; i < MAX_INS_LENGTH; i++)
@@ -168,23 +233,21 @@ inject (void)
       ((char*) packet)[i] = ins.bytes[i];
     }
 
+  for (i = 0; i < postamble_length; i++)
+    {
+      ((char*) packet)[i + MAX_INS_LENGTH] = ((char*) &postamble_start)[i];
+    }
+
   __asm__ __volatile__ ("\
-  			jmp %%g1   \n\
+  			jmp %[p]   \n\
 			nop        \n\
 			.global resume   \n\
 			resume:          \n\
 			mov %%tbr, %[result] \n\
   			"
       : [result]"=r"(result)
-      : [p]"m"(*packet)
+      : [p]"r"(packet)
   );
-
-//  __asm__ __volatile__("\
-//			.global resume   \n\
-//			resume:          \n\
-//                       "
-//		       :
-//                       :);
 
 }
 
@@ -192,11 +255,14 @@ void
 handle_result (void)
 {
   //hexDump ("\tTrap address", &result, 4);
-  uint32_t trap_number = ((int) ((int*) result)) - 0x40000000;
+  uint32_t tbr_value = ((int) ((int*) result));
+
+  //Mask important 8 bits and shift right to get rid of tail 0s
+  uint32_t trap_number = (tbr_value & TBR_MASK) >> 4;
 
   switch (trap_number)
     {
-    case 0x20:
+    case 0x02:
       trap_totals.illegal_instruction++;
       break;
     default:
@@ -205,9 +271,11 @@ handle_result (void)
 }
 
 int
-main (void)
+main (int argc, char** argv)
 {
-  packet_buffer = malloc (INSN_SIZE);
+  initialize(argc, argv);
+
+  packet_buffer = malloc (INSN_SIZE * 5);
 
   bcc_set_trap (0x02, &fault_handler);
 
@@ -219,6 +287,6 @@ main (void)
     }
 
   puts ("Search finished!");
-  printf("Total illegal instructions: %d\n", trap_totals.illegal_instruction);
+  printf ("Total illegal instructions: %d\n", trap_totals.illegal_instruction);
   return (EXIT_SUCCESS);
 }
