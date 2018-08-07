@@ -1,0 +1,35 @@
+typedef struct
+{
+  uint32_t illegal_instruction;
+  uint32_t data_store_error;
+  uint32_t instruction_access_MMU_miss;
+  uint32_t instruction_access_error;
+  uint32_t r_register_access_error;
+  uint32_t instruction_access_exception;
+  uint32_t priviledged_instruction;
+  uint32_t fp_disabled;
+  uint32_t cp_disabled;
+  uint32_t unimplemented_FLUSH;
+  uint32_t watchpoint_detected;
+  uint32_t window_overflow;
+  uint32_t window_underflow;
+  uint32_t mem_address_not_aligned;
+  uint32_t fp_exception;
+  uint32_t cp_exception;
+  uint32_t data_access_error;
+  uint32_t data_access_MMU_miss;
+  uint32_t data_access_exception;
+  uint32_t tag_overflow;
+  uint32_t division_by_zero;
+  uint32_t other;
+} trptbl_t;
+trptbl_t trap_totals =
+  { .illegal_instruction = 0, .data_store_error = 0,
+      .instruction_access_MMU_miss = 0, .instruction_access_error = 0,
+      .r_register_access_error = 0, .instruction_access_error = 0,
+      .priviledged_instruction = 0, .illegal_instruction = 0, .fp_disabled = 0,
+      .cp_disabled = 0, .unimplemented_FLUSH = 0, .watchpoint_detected = 0,
+      .window_overflow = 0, .window_underflow = 0, .mem_address_not_aligned = 0,
+      .fp_exception = 0, .cp_exception = 0, .data_access_error = 0,
+      .data_access_MMU_miss = 0, .data_access_exception = 0, .tag_overflow = 0,
+      .division_by_zero = 0, .other = 0 };

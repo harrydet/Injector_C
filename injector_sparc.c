@@ -42,59 +42,38 @@ typedef struct
 range_t search_range =
   { .start =
     { .bytes =
-      { 0x80, 0xa0, 0x60, 0x00 }, .len = 0, .index = 0 }, .end =
+      { 0x00, 0x00, 0x00, 0x00 }, .len = 0, .index = 0 }, .end =
     { .bytes =
-      { 0x00, 0xff, 0xff, 0xff }, .len = 0, .index = 2 ^ 32 }, .started =
+      { 0xff, 0xff, 0xff, 0xff }, .len = 0, .index = 2 ^ 32 }, .started =
   false };
 
-typedef struct
-{
-  uint32_t illegal_instruction;
-  uint32_t data_store_error;
-  uint32_t instruction_access_MMU_miss;
-  uint32_t instruction_access_error;
-  uint32_t r_register_access_error;
-  uint32_t instruction_access_exception;
-  uint32_t priviledged_instruction;
-  uint32_t fp_disabled;
-  uint32_t cp_disabled;
-  uint32_t unimplemented_FLUSH;
-  uint32_t watchpoint_detected;
-  uint32_t window_overflow;
-  uint32_t window_underflow;
-  uint32_t mem_address_not_aligned;
-  uint32_t fp_exception;
-  uint32_t cp_exception;
-  uint32_t data_access_error;
-  uint32_t data_access_MMU_miss;
-  uint32_t data_access_exception;
-  uint32_t tag_overflow;
-  uint32_t division_by_zero;
-  uint32_t other;
-} trptbl_t;
-trptbl_t trap_totals =
-  { .illegal_instruction = 0, .data_store_error = 0,
-      .instruction_access_MMU_miss = 0, .instruction_access_error = 0,
-      .r_register_access_error = 0, .instruction_access_error = 0,
-      .priviledged_instruction = 0, .illegal_instruction = 0, .fp_disabled = 0,
-      .cp_disabled = 0, .unimplemented_FLUSH = 0, .watchpoint_detected = 0,
-      .window_overflow = 0, .window_underflow = 0, .mem_address_not_aligned = 0,
-      .fp_exception = 0, .cp_exception = 0, .data_access_error = 0,
-      .data_access_MMU_miss = 0, .data_access_exception = 0, .tag_overflow = 0,
-      .division_by_zero = 0, .other = 0 };
-
 void
-initialize (int argc, char** argv)
+initialize ()
 {
-  int c;
-  while ((c = getopt (argc, argv, "i:")) != -1)
-    {
-      switch (c)
-	{
-	case 'i':
-	  puts ("Hi :)");
-	}
-    }
+#if defined(START3)
+  search_range.start.bytes[3] = (uint8_t)START3;
+#endif
+#if defined(START2)
+  search_range.start.bytes[2] = (uint8_t)START2;
+#endif
+#if defined(START1)
+  search_range.start.bytes[1] = (uint8_t)START1;
+#endif
+#if defined(START0)
+  search_range.start.bytes[0] = (uint8_t)START0;
+#endif
+#if defined(END3)
+  search_range.end.bytes[3] = (uint8_t)END3;
+#endif
+#if defined(END2)
+  search_range.end.bytes[2] = (uint8_t)END2;
+#endif
+#if defined(END1)
+  search_range.end.bytes[1] = (uint8_t)END1;
+#endif
+#if defined(END0)
+  search_range.end.bytes[0] = (uint8_t)END0;
+#endif
 }
 
 void
@@ -119,7 +98,6 @@ void
 hexDump (char *desc, void *addr, int len)
 {
   int i;
-  unsigned char buff[17];
   unsigned char *pc = (unsigned char*) addr;
 
   // Output description if given.
@@ -130,29 +108,7 @@ hexDump (char *desc, void *addr, int len)
   for (i = 0; i < len; i++)
     {
       printf (" %02x", pc[i]);
-
-      // And store a printable ASCII character for later.
-      if ((pc[i] < 0x20) || (pc[i] > 0x7e))
-	{
-	  buff[i % 16] = '.';
-	}
-      else
-	{
-	  buff[i % 16] = pc[i];
-	}
-
-      buff[(i % 16) + 1] = '\0';
     }
-
-  // Pad out last line if not exactly 16 characters.
-  while ((i % 16) != 0)
-    {
-      printf ("   ");
-      i++;
-    }
-
-  // And print the final ASCII bit.
-  printf ("  %s\n", buff);
 }
 
 void
@@ -260,10 +216,12 @@ handle_result (void)
   //Mask important 8 bits and shift right to get rid of tail 0s
   uint32_t trap_number = (tbr_value & TBR_MASK) >> 4;
 
+  printf ("  0x%02x\n", trap_number);
+
   switch (trap_number)
     {
     case 0x02:
-      trap_totals.illegal_instruction++;
+      //trap_totals.illegal_instruction++;
       break;
     default:
       break;
@@ -271,22 +229,21 @@ handle_result (void)
 }
 
 int
-main (int argc, char** argv)
+main ()
 {
-  initialize(argc, argv);
+  initialize ();
 
-  packet_buffer = malloc (INSN_SIZE * 5);
+  packet_buffer = malloc (INSN_SIZE * 10);
 
   bcc_set_trap (0x02, &fault_handler);
 
   while (move_next_instruction ())
     {
-      hexDump ("Instruction", packet, 4);
       inject ();
+      hexDump ("Instruction", packet, 4);
       handle_result ();
     }
 
   puts ("Search finished!");
-  printf ("Total illegal instructions: %d\n", trap_totals.illegal_instruction);
   return (EXIT_SUCCESS);
 }
