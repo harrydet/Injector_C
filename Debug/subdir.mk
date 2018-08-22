@@ -14,10 +14,10 @@ C_DEPS += \
 
 
 # Each subdirectory must supply rules for building sources it contributes
-%.o: ../%.c
+injector_sparc.o: ../injector_sparc.c
 	@echo 'Building file: $<'
 	@echo 'Invoking: Cross GCC Compiler'
-	sparc-gaisler-elf-gcc -O0 -g3 -Wall -c -fmessage-length=0 -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@:%.o=%.d)" -o "$@" "$<"
+	sparc-gaisler-elf-gcc -DSTART0=0x03 -DSTART1=0xff -DSTART2=0x00 -DSTART3=0xff -O0 -g3 -Wall -c -fmessage-length=0 -MMD -MP -MF"$(@:%.o=%.d)" -MT"injector_sparc.d" -o "$@" "$<"
 	@echo 'Finished building: $<'
 	@echo ' '
 
