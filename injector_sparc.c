@@ -50,10 +50,18 @@
 #define UDIVC_TEMPLATE 0x80F00000
 #define SDIVC_TEMPLATE 0x80F80000
 
+#define SMAC_TEMPLATE 0x81F80000
+
 #define TRAP_TEMPLATE 0x81D00000
 
 #define SEARCH_FORWARD 1
 #define SEARCH_BACK 2
+
+//Destination registers
+#define DEST_REG_MASK 0xFE000000
+
+#define DEST_FP 0xBC000000
+#define DEST_I7 0xBE000000
 
 extern int resume, postamble_start, postamble_end, _init, anchor_point;
 
@@ -66,6 +74,15 @@ int last_trap, cont_traps;
 
 uint32_t tbr_value;
 uint32_t tbr_from_lib;
+
+uint32_t load_store_opcodes[38] =
+  { 0xC0480000, 0xC0500000, 0xC0080000, 0xC0100000, 0xC0000000, 0xC0180000,
+      0xC0C80000, 0xC0D00000, 0xC0880000, 0xC0900000, 0xC0800000, 0xC0980000,
+      0xC1000000, 0xC1180000, 0xC1080000, 0xC1800000, 0xC1980000, 0xC1880000,
+      0xC0280000, 0xC0300000, 0xC0200000, 0xC0380000, 0xC0A80000, 0xC0B00000,
+      0xC0A00000, 0xC0B80000, 0xC1200000, 0xC1380000, 0xC1280000, 0xC1300000,
+      0xC1A00000, 0xC1B80000, 0xC1A80000, 0xC1B00000, 0xC0680000, 0xC0E80000,
+      0xC0780000, 0xC0F80000 };
 
 typedef struct
 {
@@ -87,7 +104,7 @@ typedef struct
 range_t search_range =
   { .start =
     { .bytes =
-      { 0x83, 0xc7, 0x77, 0x7c }, .len = 0 }, .end =
+      { 0xc0, 0x00, 0x00, 0x00 }, .len = 0 }, .end =
     { .bytes =
       { 0xff, 0xff, 0xff, 0xff }, .len = 0 }, .started =
   false, .rate = 1, .true_value = 0, .direction = SEARCH_FORWARD, .last_switch =
@@ -106,6 +123,18 @@ convert_to_int (void)
 //  search_range.true_value += ins.bytes[2] * UCHAR_MAX + 1;
 //  search_range.true_value += ins.bytes[1] * (USHRT_MAX + 1);
 //  search_range.true_value += ins.bytes[0] * ((UCHAR_MAX + 1) * (USHRT_MAX + 1));
+}
+
+bool
+check_opcode (int val, uint32_t *arr, int size)
+{
+  int i;
+  for (i = 0; i < size; i++)
+    {
+      if (arr[i] == val)
+	return true;
+    }
+  return false;
 }
 
 void
@@ -326,7 +355,8 @@ inject (void)
       return;
     }
 
-  if ((i & FORM3_MASK) == TAG_ADD_TEMPLATE || (i & FORM3_MASK) == TAG_SUB_TEMPLATE)
+  if ((i & FORM3_MASK) == TAG_ADD_TEMPLATE
+      || (i & FORM3_MASK) == TAG_SUB_TEMPLATE)
     {
       printf ("Tagged ADD or SUB, skipping ");
       __asm__ __volatile__ ("\
@@ -339,7 +369,8 @@ inject (void)
     }
 
   if ((i & FORM3_MASK) == WRY_TEMPLATE || (i & FORM3_MASK) == WPSR_TEMPLATE
-      || (i & FORM3_MASK) == WRWIM_TEMPLATE || (i & FORM3_MASK) == WRTBR_TEMPLATE)
+      || (i & FORM3_MASK) == WRWIM_TEMPLATE
+      || (i & FORM3_MASK) == WRTBR_TEMPLATE)
     {
       printf ("Write to special registers, skipping ");
       __asm__ __volatile__ ("\
@@ -365,28 +396,55 @@ inject (void)
     }
 
   if ((i & FORM3_MASK) == UDIV_TEMPLATE || (i & FORM3_MASK) == SDIV_TEMPLATE
-        || (i & FORM3_MASK) == UDIVC_TEMPLATE || (i & FORM3_MASK) == SDIVC_TEMPLATE)
-      {
-        printf ("DIV instruction, skipping ");
-        __asm__ __volatile__ ("\
+      || (i & FORM3_MASK) == UDIVC_TEMPLATE
+      || (i & FORM3_MASK) == SDIVC_TEMPLATE)
+    {
+      printf ("DIV instruction, skipping ");
+      __asm__ __volatile__ ("\
                       			 st %[value], %[result] \n\
                       			  "
-  	  : // No output
-  	  : [result]"m"(result),
-  	  [value]"r"(0x40000880));
-        return;
-      }
+	  : // No output
+	  : [result]"m"(result),
+	  [value]"r"(0x40000880));
+      return;
+    }
 
-  if((i & FORM3_MASK) == TRAP_TEMPLATE){
+  if ((i & FORM3_MASK) == TRAP_TEMPLATE)
+    {
       printf ("Trap instruction, skipping ");
-              __asm__ __volatile__ ("\
+      __asm__ __volatile__ ("\
                             			 st %[value], %[result] \n\
                             			  "
-        	  : // No output
-        	  : [result]"m"(result),
-        	  [value]"r"(0x40000880));
-              return;
-  }
+	  : // No output
+	  : [result]"m"(result),
+	  [value]"r"(0x40000880));
+      return;
+    }
+
+  if ((i & DEST_REG_MASK) == DEST_FP || (i & DEST_REG_MASK) == DEST_I7)
+    {
+      printf ("Corrupting destination, skipping ");
+      __asm__ __volatile__ ("\
+                                  			 st %[value], %[result] \n\
+                                  			  "
+	  : // No output
+	  : [result]"m"(result),
+	  [value]"r"(0x40000880));
+      return;
+    }
+
+  if (check_opcode ((i & FORM3_MASK), load_store_opcodes,
+		    sizeof(load_store_opcodes)))
+    {
+      printf ("Load/Store, skipping ");
+      __asm__ __volatile__ ("\
+                                        			 st %[value], %[result] \n\
+                                        			  "
+	  : // No output
+	  : [result]"m"(result),
+	  [value]"r"(0x40000880));
+      return;
+    }
 
   for (i = 0; i < postamble_length; i++)
     {
